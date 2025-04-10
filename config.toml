@@ -1,6 +1,7 @@
 [listener]#******非特殊情况，默认即可******本地监听端口，其他工具中的SOCKS5代理指定为该IP:PORT，即可轮询使用其他代理
-IP='127.0.0.1'
+IP='0.0.0.0'
 PORT=10086
+httpPort=10087    # 新增 HTTP 代理端口
 userName=''#用户名和密码都不为空时，会进行认证，防止部署到vps上时，被其他人使用
 password=''
 
@@ -10,8 +11,8 @@ periodicGetSocks=''#如0 6 * * 6为每周六早上6点去通过fofa、hunter、q
 
 [checkSocks]#******非特殊情况，默认即可******
 #通过访问实际url来验证代理的可用性
-checkURL='https://www.baidu.com/robots.txt'#可以配置为要访问的目标地址，确保所有代理都能访问到目标地址
-checkRspKeywords='Baiduspider'#上面地址原始响应中的某个字符串，用来验证通过代理访问目标时有无因某种原因被ban掉。
+checkURL='https://www.google.com/robots.txt'#可以配置为要访问的目标地址，确保所有代理都能访问到目标地址
+checkRspKeywords='AdsBot'#上面地址原始响应中的某个字符串，用来验证通过代理访问目标时有无因某种原因被ban掉。
 maxConcurrentReq=200 #同时最多N个并发通过代理访问上面的地址，检测socks5代理是否可用，可根据网络环境调整。云主机的话开500、1000都可以，本机的话，开三五十差不多。
 timeout=6 #单位秒，验证socks5代理的超时时间,建议保持在5或6，检查及使用代理访问上面的地址时，超过这个时间，判定无效
 
@@ -22,24 +23,24 @@ checkURL='https://qifu-api.baidubce.com/ip/local/geo/v1/district'#访问此url�
 excludeKeywords=['澳门','香港','台湾']#格式如：['澳门','香港']优先级最高，返回的body内容中，存在任一关键字，则跳过，
 includeKeywords=['中国']#格式如：['中国','北京']则只获取中国北京的代理，如果是['中国'],排除上述关键字的前提下则获取中国所有其他地区代理
 
-[FOFA]
-switch = 'close' #open:启用，非open:禁用
-apiUrl='https://fofa.info/api/v1/search/all'
-email = '*****@*****.com'
-key = '54*****ddc*****68b*****b4*****12'
-queryString = 'protocol=="socks5" && country="CN" && banner="Method:No Authentication"'
-resultSize=300 #此处最大为10000,需小于等于从官网web界面看到的结果数量
+#[FOFA]
+#switch = 'close' #open:启用，非open:禁用
+#apiUrl='https://fofa.info/api/v1/search/all'
+#email = '*****@*****.com'
+#key = '54*****ddc*****68b*****b4*****12'
+#queryString = 'protocol=="socks5" && country="CN" && banner="Method:No Authentication"'
+#resultSize=300 #此处最大为10000,需小于等于从官网web界面看到的结果数量
 
-[QUAKE]
-switch = 'close'
-apiUrl='https://quake.360.net/api/v3/search/quake_service'
-key = '96*****36-*****-40c4-*****-5ef*****90b0a'
-queryString = 'service:socks5  AND country: "CN" AND response:"No authentication"'
-resultSize=500 #此处最大为10000,需小于等于从官网web界面看到的结果数量
+#[QUAKE]
+#switch = 'close'
+#apiUrl='https://quake.360.net/api/v3/search/quake_service'
+#key = '96*****36-*****-40c4-*****-5ef*****90b0a'
+#queryString = 'service:socks5  AND country: "CN" AND response:"No authentication"'
+#resultSize=500 #此处最大为10000,需小于等于从官网web界面看到的结果数量
 
-[HUNTER]
-switch = 'close'
-apiUrl='https://hunter.qianxin.com/openApi/search'
-key = '9c1698e0*****90758edc2******533f9*******048***ce18'
-queryString = 'protocol=="socks5"&&protocol.banner="No authentication"&&ip.country="CN"'
-resultSize=200 #最小为100,按100条/每页翻页，最大值需小于从官网web界面看到的结果数量，值需为100的整倍数，如200、300、1000、2000等
+#[HUNTER]
+#switch = 'close'
+#apiUrl='https://hunter.qianxin.com/openApi/search'
+#key = '9c1698e0*****90758edc2******533f9*******048***ce18'
+#queryString = 'protocol=="socks5"&&protocol.banner="No authentication"&&ip.country="CN"'
+#resultSize=200 #最小为100,按100条/每页翻页，最大值需小于从官网web界面看到的结果数量，值需为100的整倍数，如200、300、1000、2000等

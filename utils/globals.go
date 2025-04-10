@@ -1,6 +1,9 @@
 package utils
 
-import "sync"
+import (
+	"fmt"
+	"sync"
+)
 
 var (
 	SocksList     []string
@@ -9,9 +12,12 @@ var (
 	Timeout       int
 	LastDataFile  = "lastData.txt"
 	Wg            sync.WaitGroup
-	mu            sync.Mutex
+	Mu            sync.Mutex // 导出 Mu
 	semaphore     chan struct{}
 )
+
+// 导出 AddSocksMu 以在其他包中使用
+var AddSocksMu sync.Mutex
 
 func Banner() {
 	banner := `
@@ -25,5 +31,5 @@ func Banner() {
                                        \ \_\                        
                                         \/_/                        
 `
-	print(banner)
+	fmt.Println(banner)
 }

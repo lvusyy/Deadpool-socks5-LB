@@ -18,6 +18,7 @@ type Config struct {
 type ListenerConfig struct {
 	IP       string `toml:"IP"`
 	Port     int    `toml:"PORT"`
+	HttpPort int    `toml:"httpPort"`
 	UserName string `toml:"userName"`
 	Password string `toml:"password"`
 }

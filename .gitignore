@@ -1,0 +1,10 @@
+# Binaries
+Deadpool
+Deadpool.exe
+
+# Temporary data files
+lastData.txt
+
+# OS generated files
+.DS_Store
+Thumbs.db
