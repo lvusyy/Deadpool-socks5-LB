@@ -17,31 +17,30 @@ builds:
       - arm64
     # 设置 ldflags 以便在二进制文件中嵌入版本信息
     # -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}} -X main.builtBy=goreleaser
+    # Ensure ldflags is correctly formatted as a list of strings
     ldflags:
-     - -s -w # 去除符号信息和调试信息，减小体积
+      - -s -w # 去除符号信息和调试信息，减小体积
     # 指定主程序入口
     main: ./main.go
     # 输出的二进制文件名模板
     binary: '{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}'
 
 archives:
-  - format: tar.gz # Linux 和 macOS 使用 tar.gz
-    # 排除 Windows 平台
+  - format: tar.gz
+    # Filter for Linux and Darwin
     goos:
       - linux
       - darwin
-    # 包含 README 和 LICENSE
     files:
       - README.md
       - LICENSE
       - config.toml # 将配置文件也打包进去
     # 归档文件名模板
     name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
-  - format: zip # Windows 使用 zip
-    # 只包含 Windows 平台
+  - format: zip
+    # Filter for Windows
     goos:
       - windows
-    # 包含 README 和 LICENSE
     files:
       - README.md
       - LICENSE
