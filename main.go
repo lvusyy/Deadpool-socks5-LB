@@ -249,7 +249,7 @@ func main() {
 	// SOCKS5 服务器配置。Dial 必须为 nil 或标准拨号器，
 	// 不能是 utils.DefineDial，否则会导致循环。
 	conf := &socks5.Config{
-		// Dial:   utils.DefineDial, // 移除此行，使用默认拨号器
+		Dial:   utils.DefineDial, // 直接使用 utils.DefineDial，签名匹配
 		Logger: log.New(io.Discard, "", log.LstdFlags),
 	}
 	userName := strings.TrimSpace(config.Listener.UserName)

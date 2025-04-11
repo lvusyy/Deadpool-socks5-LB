@@ -1,6 +1,6 @@
 <img src="images/deadpool.png" style="zoom:30%;transform: scale(0.3);" width="35%" height="35%"/>
 
-deadpool代理池工具，可从**hunter**、**quake**、**fofa**等**网络空间测绘平台取高质量socks5**代理，或**本地导入socks5**代理，轮询使用代理进行流量转发。
+deadpool代理池工具，可从**hunter**、**quake**、**fofa**等**网络空间测绘平台取高质量socks5**代理，或**本地导入socks5**代理，同时支持 **HTTP** 和 **SOCKS5** 协议，轮询使用代理进行流量转发。
 > **开发不易,如果觉得该项目对您有帮助, 麻烦点个Star吧**
 
 **2024-09-15改动：增加周期性任务：根据配置信息，定时检测存活、定时从网络空间取代理**
@@ -65,7 +65,7 @@ deadpool代理池工具，可从**hunter**、**quake**、**fofa**等**网络空�
 
 <img src="images/SwitchyOmega.png" style="zoom:33%;" width="65%" height="65%" />
 
-其他工具使用时同理，指定socks5协议，IP、端口即可
+其他工具使用时同理，指定 **HTTP** 或 **SOCKS5** 协议，IP、端口即可（HTTP 代理端口默认为 10087，SOCKS5 代理端口默认为 10086，可在 `config.toml` 中修改）。
 
 ### 0x04 配置文件说明
 
@@ -83,11 +83,12 @@ config.toml详细说明如下：
 
 ```toml
 [listener]
-#******非特殊情况，默认即可******本地监听端口，其他工具中的SOCKS5代理指定为该IP:PORT，即可轮询使用收集的代理
-IP='127.0.0.1'
-PORT='10086'
+#******非特殊情况，默认即可******本地监听端口，其他工具中的代理指定为该IP:PORT，即可轮询使用收集的代理
+IP='0.0.0.0' # 监听所有网络接口
+PORT=10086   # SOCKS5 代理端口
+httpPort=10087 # HTTP 代理端口
 userName=''#用户名和密码都不为空时，会进行认证，防止部署到vps上时，被其他人使用
-password='' 
+password=''
 
 [task]#周期性任务,若不为空，则会执行（请注意格式）
 periodicChecking=''#如0 */5 * * *为每5小时按照[checkSocks]中的配置检查一次内存中已有代理的存活性，如果为空，不单独周期性检查
@@ -95,10 +96,10 @@ periodicGetSocks=''#如0 6 * * 6为每周六早上6点去通过fofa、hunter、q
 
 [checkSocks]#******非特殊情况，默认即可******
 #通过访问实际url来验证代理的可用性
-checkURL='https://www.baidu.com'#可以配置为要访问的目标地址，确保所有代理都能访问到目标地址
-checkRspKeywords='百度一下'#上面地址原始响应中的某个字符串，用来验证通过代理访问目标时有无因某种原因被ban掉。
-maxConcurrentReq='30'#同时最多N个并发通过代理访问上面的地址，检测socks5代理是否可用，可根据网络环境调整。云主机的话开500、1000都可以，本机的话，开三五十差不多。
-timeout='6'#单位秒，验证socks5代理的超时时间,建议保持在5或6，检查及使用代理访问上面的地址时，超过这个时间，判定无效
+checkURL='https://www.baidu.com/robots.txt'#可以配置为要访问的目标地址，确保所有代理都能访问到目标地址 (修改为百度)
+checkRspKeywords='Baiduspider'#上面地址原始响应中的某个字符串，用来验证通过代理访问目标时有无因某种原因被ban掉。(修改为匹配百度)
+maxConcurrentReq=200 #同时最多N个并发通过代理访问上面的地址，检测socks5代理是否可用，可根据网络环境调整。云主机的话开500、1000都可以，本机的话，开三五十差不多。
+timeout=6 #单位秒，验证socks5代理的超时时间,建议保持在5或6，检查及使用代理访问上面的地址时，超过这个时间，判定无效
 
 [checkSocks.checkGeolocate]
 ##******非特殊情况，默认即可******通过访问返回IP归属地信息的URL和关键字判断，来排除某些代理，如：某些情况下，真正要访问的系统限制只有大陆地区IP可以访问
