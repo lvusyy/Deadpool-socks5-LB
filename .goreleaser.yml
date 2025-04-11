@@ -1,0 +1,73 @@
+# .goreleaser.yml
+# Visit https://goreleaser.com/customization/ for more options
+before:
+  hooks:
+    # You may remove this if you don't use go modules.
+    - go mod tidy
+builds:
+  - env:
+      # GO111MODULE: on # 确保 Go modules 开启 (通常是默认)
+      CGO_ENABLED: 0 # 禁用 CGO 以获得更静态的二进制文件，提高跨平台兼容性
+    goos:
+      - linux
+      - windows
+      - darwin # macOS
+    goarch:
+      - amd64
+      - arm64
+    # 设置 ldflags 以便在二进制文件中嵌入版本信息
+    # -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}} -X main.builtBy=goreleaser
+    ldflags:
+     - -s -w # 去除符号信息和调试信息，减小体积
+    # 指定主程序入口
+    main: ./main.go
+    # 输出的二进制文件名模板
+    binary: '{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}'
+
+archives:
+  - format: tar.gz # Linux 和 macOS 使用 tar.gz
+    # 排除 Windows 平台
+    goos:
+      - linux
+      - darwin
+    # 包含 README 和 LICENSE
+    files:
+      - README.md
+      - LICENSE
+      - config.toml # 将配置文件也打包进去
+    # 归档文件名模板
+    name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+  - format: zip # Windows 使用 zip
+    # 只包含 Windows 平台
+    goos:
+      - windows
+    # 包含 README 和 LICENSE
+    files:
+      - README.md
+      - LICENSE
+      - config.toml # 将配置文件也打包进去
+    # 归档文件名模板
+    name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  name_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - 'Merge pull request'
+      - 'Merge branch'
+
+# 发布配置，通常使用默认即可
+# release:
+  # Optional: Draft release on GitHub instead of publishing live
+  # draft: true
+  # Optional: Mark release as prerelease on GitHub
+  # prerelease: auto
