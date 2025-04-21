@@ -5,6 +5,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -287,31 +289,77 @@ func GetSocksFromHunter(hunter HUNTERConfig) {
 	fmt.Println("+++hunter数据已取+++")
 }
 
-// 从本地文件获取，格式为IP:PORT
+// 从本地文件获取，格式为 IP:PORT 或 socks5://user:pass@IP:PORT
 func GetSocksFromFile(socksFileName string) {
 	_, err := os.Stat(socksFileName)
 	if !os.IsNotExist(err) {
-		fmt.Println("***当前目录下存在" + socksFileName + ",将按行读取格式为IP:PORT的socks5代理***")
+		fmt.Printf("***当前目录下存在 %s, 将按行读取代理 (格式: IP:PORT 或 socks5://user:pass@IP:PORT)***\n", socksFileName)
 		file, err := os.Open(socksFileName)
 		if err != nil {
-			fmt.Println("读取文件"+socksFileName+"异常，略过该文件中的代理，异常信息为:", err)
+			fmt.Printf("读取文件 %s 异常，略过该文件中的代理，异常信息为: %v\n", socksFileName, err)
 			return
 		}
 		defer file.Close()
 
 		scanner := bufio.NewScanner(file)
-
+		lineNum := 0
+		addedCount := 0
 		for scanner.Scan() {
-			line := scanner.Text()
-			if strings.TrimSpace(line) != "" {
-				SocksList = append(SocksList, line)
+			lineNum++
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" {
+				continue // Skip empty lines
 			}
+
+			var proxyURL string
+			// 尝试解析为 socks5://user:pass@host:port 格式
+			if strings.HasPrefix(line, "socks5://") {
+				u, err := url.Parse(line)
+				// 基础解析检查
+				if err != nil || u.Scheme != "socks5" || u.Host == "" {
+					fmt.Printf("警告: 文件 %s 第 %d 行格式错误 (无法解析为有效的 socks5 URL): %s\n", socksFileName, lineNum, line)
+					continue
+				}
+				// 验证 Host 是否为 IP:Port 格式
+				_, _, err = net.SplitHostPort(u.Host)
+				if err != nil {
+					fmt.Printf("警告: 文件 %s 第 %d 行格式错误 (socks5 URL 的 host 部分不是有效的 IP:Port): %s\n", socksFileName, lineNum, line)
+					continue
+				}
+				// 可选：进一步验证用户名/密码字符（如果需要）
+				proxyURL = line // 使用原始的有效 URL 字符串
+			} else {
+				// 尝试解析为 IP:PORT 格式
+				host, port, err := net.SplitHostPort(line)
+				if err != nil || host == "" || port == "" {
+					// 如果不是 socks5:// 开头，也不是 IP:PORT，则格式错误
+					fmt.Printf("警告: 文件 %s 第 %d 行格式错误 (不是有效的 IP:PORT 或 socks5://...): %s\n", socksFileName, lineNum, line)
+					continue
+				}
+				// 验证 IP 和 Port
+				if net.ParseIP(host) == nil {
+					fmt.Printf("警告: 文件 %s 第 %d 行格式错误 (IP 地址 '%s' 无效): %s\n", socksFileName, lineNum, host, line)
+					continue
+				}
+				if _, err := strconv.Atoi(port); err != nil {
+					fmt.Printf("警告: 文件 %s 第 %d 行格式错误 (端口号 '%s' 无效): %s\n", socksFileName, lineNum, port, line)
+					continue
+				}
+				// 转换为 socks5://IP:PORT 格式存储，以便后续统一处理
+				proxyURL = "socks5://" + line
+			}
+
+			// 使用 addSocks 添加到全局列表 (确保线程安全)
+			addSocks(proxyURL)
+			addedCount++
 		}
-		// 检查扫描过程中是否发生了错误
+
 		if err := scanner.Err(); err != nil {
-			fmt.Println("Error reading file,请确认文件中的socks5代理是IP:PORT格式:", err)
+			fmt.Printf("读取文件 %s 时发生错误: %v\n", socksFileName, err)
 		}
+		fmt.Printf("---文件 %s 处理完毕，成功添加 %d 条代理---\n", socksFileName, addedCount)
+
 	} else {
-		fmt.Println(socksFileName + "文件不存在，将根据配置信息从网络空间测绘平台取socks5的代理")
+		fmt.Println(socksFileName + " 文件不存在，将根据配置信息从网络空间测绘平台取 socks5 的代理")
 	}
 }

@@ -111,40 +111,105 @@ func CheckSocks(checkSocks CheckSocksConfig, socksListParam []string) {
 
 		Wg.Add(1)
 		semaphore <- struct{}{}
-		go func(proxyAddr string) {
+		go func(proxyURLStr string) { // Renamed proxyAddr to proxyURLStr for clarity
 			tmpMu.Lock()
 			num++
-			fmt.Printf("\r正检测第 [ %v/%v ] 个代理,异步处理中...                    ", num, total)
+			// Extract host:port for logging, hide credentials
+			logHostPort := proxyURLStr
+			parsedURL, _ := url.Parse(proxyURLStr)
+			if parsedURL != nil {
+				logHostPort = parsedURL.Host // Show only host:port in logs
+			}
+			fmt.Printf("\r正检测第 [ %v/%v ] 个代理 [%s], 异步处理中...", num, total, logHostPort)
 			tmpMu.Unlock()
+
 			defer Wg.Done()
 			defer func() {
 				<-semaphore
-
 			}()
-			socksProxy := "socks5://" + proxyAddr
-			proxy := func(_ *http.Request) (*url.URL, error) {
-				return url.Parse(socksProxy)
-			}
-			tr := &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-				Proxy:           proxy,
-			}
-			client := &http.Client{
-				Transport: tr,
-				Timeout:   time.Duration(timeout) * time.Second,
-			}
-			req, err := http.NewRequest("GET", reqUrl, nil)
+
+			// 1. Parse the proxy URL
+			parsedProxyURL, err := url.Parse(proxyURLStr)
 			if err != nil {
-				// 添加错误日志
-				fmt.Printf("\nError creating request for %s: %v\n", proxyAddr, err)
+				fmt.Printf("\n无法解析代理 URL %s: %v\n", proxyURLStr, err)
 				return
 			}
-			req.Header.Add("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36 Edg/112.0.1722.17")
-			req.Header.Add("referer", "https://www.baidu.com/s?ie=utf-8&f=8&rsv_bp=1&rsv_idx=1&tn=baidu&wd=ip&fenlei=256&rsv_pq=0xc23dafcc00076e78&rsv_t=6743gNBuwGYWrgBnSC7Yl62e52x3CKQWYiI10NeKs73cFjFpwmqJH%2FOI%2FSRG&rqlang=en&rsv_dl=tb&rsv_enter=1&rsv_sug3=5&rsv_sug1=5&rsv_sug7=101&rsv_sug2=0&rsv_btype=i&prefixsug=ip&rsp=4&inputT=2165&rsv_sug4=2719")
+
+			// 2. Extract host and auth
+			proxyHost := parsedProxyURL.Host
+			var auth *proxy.Auth
+			if parsedProxyURL.User != nil {
+				username := parsedProxyURL.User.Username()
+				password, _ := parsedProxyURL.User.Password()
+				auth = &proxy.Auth{
+					User:     username,
+					Password: password,
+				}
+			}
+
+			// 3. Create SOCKS5 dialer with potential authentication
+			// Use a standard net.Dialer for the underlying connection to the proxy server itself
+			baseDialer := &net.Dialer{
+				Timeout:   time.Duration(timeout) * time.Second, // Timeout for connecting to the proxy server
+				KeepAlive: 30 * time.Second,
+			}
+			socksDialer, err := proxy.SOCKS5("tcp", proxyHost, auth, baseDialer)
+			if err != nil {
+				fmt.Printf("\n创建 SOCKS5 拨号器失败 (%s): %v\n", logHostPort, err)
+				return
+			}
+
+			// Check if the dialer supports context
+			contextDialer, ok := socksDialer.(proxy.ContextDialer)
+			if !ok {
+				fmt.Printf("\n警告: SOCKS5 拨号器 (%s) 不支持 context.Context\n", logHostPort)
+				// Optionally handle this case, maybe skip or use Dial without context
+				return
+			}
+
+			// 4. Create HTTP Transport using the SOCKS5 dialer
+			tr := &http.Transport{
+				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+					// The DialContext should use the contextDialer to dial the target address (addr)
+					// The network parameter is usually "tcp"
+					return contextDialer.DialContext(ctx, network, addr)
+				},
+				TLSClientConfig:       &tls.Config{InsecureSkipVerify: true}, // For the target connection via proxy
+				MaxIdleConns:          100,
+				IdleConnTimeout:       90 * time.Second,
+				TLSHandshakeTimeout:   10 * time.Second, // Timeout for TLS handshake with the target server
+				ExpectContinueTimeout: 1 * time.Second,
+				// Important: Set ForceAttemptHTTP2 to false if the proxy might not support HTTP/2 forwarding well
+				ForceAttemptHTTP2: false,
+			}
+
+			// 5. Create HTTP Client using the custom transport
+			client := &http.Client{
+				Transport: tr,
+				Timeout:   time.Duration(timeout) * time.Second, // Overall timeout for the HTTP request via proxy
+			}
+
+			// 6. Perform HTTP Request
+			// Create request context with timeout
+			reqCtx, reqCancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
+			defer reqCancel()
+
+			req, err := http.NewRequestWithContext(reqCtx, "GET", reqUrl, nil) // Use request context
+			if err != nil {
+				fmt.Printf("\n创建 HTTP 请求失败 (%s): %v\n", logHostPort, err)
+				return
+			}
+			// Add headers
+			req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+			// req.Header.Add("referer", "...") // Referer might not be needed for simple checks
 			resp, err := client.Do(req)
 			if err != nil {
-				// fmt.Printf("%v: %v\n", proxyAddr, err)
-				// fmt.Printf("+++++++代理不可用：%v+++++++\n", proxyAddr)
+				// Log the error, including context cancellation or timeout
+				if ctxErr := reqCtx.Err(); ctxErr == context.DeadlineExceeded {
+					fmt.Printf("\n代理检查超时 (%s): %v\n", logHostPort, err)
+				} else {
+					fmt.Printf("\n通过代理 %s 请求失败: %v\n", logHostPort, err)
+				}
 				return
 			}
 			defer resp.Body.Close()
@@ -152,7 +217,7 @@ func CheckSocks(checkSocks CheckSocksConfig, socksListParam []string) {
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {
 				// 添加错误日志
-				fmt.Printf("\nError reading response body for %s: %v\n", proxyAddr, err)
+				fmt.Printf("\n读取响应体失败 (%s): %v\n", logHostPort, err)
 				return
 			}
 			stringBody := string(body)
@@ -164,23 +229,24 @@ func CheckSocks(checkSocks CheckSocksConfig, socksListParam []string) {
 				//直接循环要排除的关键字，任一命中就返回
 				for _, keyword := range checkGeolocateConfig.ExcludeKeywords {
 					if strings.Contains(stringBody, keyword) {
-						// fmt.Println("忽略：" + proxyAddr + "包含：" + keyword.(string))
+						// fmt.Printf("忽略地理位置 (排除 %s): %s\n", keyword, logHostPort)
 						return
 					}
 				}
 				//直接循环要必须包含的关键字，任一未命中就返回
 				for _, keyword := range checkGeolocateConfig.IncludeKeywords {
 					if !strings.Contains(stringBody, keyword) {
-						// fmt.Println("忽略：" + proxyAddr + "未包含：" + keyword.(string))
+						// fmt.Printf("忽略地理位置 (未包含 %s): %s\n", keyword, logHostPort)
 						return
 					}
 				}
 
 			}
 			tmpMu.Lock()
-			tmpEffectiveList = append(tmpEffectiveList, proxyAddr)
+			// Add the original proxy URL string (which might include auth) to the effective list
+			tmpEffectiveList = append(tmpEffectiveList, proxyURLStr)
 			tmpMu.Unlock()
-		}(proxyAddr)
+		}(proxyAddr) // Pass the original URL string to the goroutine
 	}
 	Wg.Wait()
 	Mu.Lock() // 使用导出的 Mu
@@ -266,18 +332,44 @@ func transmitReqFromClient(network string, address string) (net.Conn, error) {
 		proxyIndex = (currentIndex + 1) % currentListLen
 		Mu.Unlock() // 使用导出的 Mu
 
-		fmt.Println(time.Now().Format("2006-01-02 15:04:05") + "\t" + tempProxy)
+		// 解析代理 URL (tempProxy is now a URL string like socks5://user:pass@host:port or socks5://host:port)
+		parsedProxyURL, err := url.Parse(tempProxy)
+		if err != nil {
+			fmt.Printf("无法解析代理 URL %s: %v\n", tempProxy, err)
+			delInvalidProxy(tempProxy) // 格式错误，移除
+			continue
+		}
+
+		proxyHost := parsedProxyURL.Host // IP:PORT part
+		logHostPort := proxyHost         // For logging
+
+		fmt.Println(time.Now().Format("2006-01-02 15:04:05") + "\t使用代理: " + logHostPort) // Log only host:port
+
+		// 提取认证信息
+		var auth *proxy.Auth
+		if parsedProxyURL.User != nil {
+			username := parsedProxyURL.User.Username()
+			password, _ := parsedProxyURL.User.Password()
+			auth = &proxy.Auth{
+				User:     username,
+				Password: password,
+			}
+			// fmt.Println("  (使用认证)") // Optional: Log if auth is used
+		}
 
 		// 为 SOCKS5 拨号创建上下文，包含整体超时
 		ctx, cancel := context.WithTimeout(context.Background(), timeout) // 整体超时
 
-		// 使用 proxy.SOCKS5 创建拨号器
-		socksDialer, err := proxy.SOCKS5(network, tempProxy, nil, dialer)
-		if err != nil { // 创建拨号器失败
+		// 使用 proxy.SOCKS5 创建拨号器 (传入认证信息)
+		// network: "tcp" (通常是目标连接类型)
+		// proxyHost: SOCKS5 服务器地址 (IP:PORT)
+		// auth: 认证信息 (可能为 nil)
+		// dialer: 用于连接 *到* SOCKS5 服务器的基础拨号器
+		socksDialer, err := proxy.SOCKS5(network, proxyHost, auth, dialer)
+		if err != nil { // 创建拨号器失败 (通常是配置问题，不是代理本身问题)
 			cancel() // 取消上下文
-			fmt.Printf("Error creating SOCKS5 dialer for %s: %v\n", tempProxy, err)
-			// 创建拨号器失败通常不是代理本身的问题，不应删除代理
-			// delInvalidProxy(tempProxy) // 移除调用
+			fmt.Printf("创建 SOCKS5 拨号器失败 (%s): %v\n", logHostPort, err)
+			// 不移除代理，因为这可能是配置错误
 			continue // 直接尝试下一个代理
 		}
 
@@ -285,7 +377,7 @@ func transmitReqFromClient(network string, address string) (net.Conn, error) {
 		contextDialer, ok := socksDialer.(proxy.ContextDialer)
 		if !ok {
 			cancel() // 取消上下文
-			fmt.Printf("Warning: SOCKS5 dialer for %s does not support context.Context\n", tempProxy)
+			fmt.Printf("警告: SOCKS5 拨号器 (%s) 不支持 context.Context\n", logHostPort)
 			// 回退到不带 context 的 Dial，依赖 dialer 内部的超时
 			conn, err := socksDialer.Dial(network, address)
 			if err == nil {
@@ -294,7 +386,7 @@ func transmitReqFromClient(network string, address string) (net.Conn, error) {
 				return conn, nil
 			}
 			// 连接失败
-			fmt.Printf("%s 连接失败 (no context): %v\n", tempProxy, err)
+			fmt.Printf("%s 连接失败 (no context): %v\n", logHostPort, err)
 			delInvalidProxy(tempProxy) // 从列表中移除无效代理
 			continue                   // 尝试下一个代理
 		}
@@ -310,14 +402,14 @@ func transmitReqFromClient(network string, address string) (net.Conn, error) {
 		}
 
 		// 连接失败
-		fmt.Printf("%s 连接失败: %v\n", tempProxy, err)
+		fmt.Printf("%s 连接失败: %v\n", logHostPort, err)
 		delInvalidProxy(tempProxy) // 从列表中移除无效代理
 
 		// 检查是否是超时错误
 		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-			fmt.Printf("%s 超时\n", tempProxy)
+			fmt.Printf("%s 超时\n", logHostPort)
 		} else if ctx.Err() == context.DeadlineExceeded {
-			fmt.Printf("%s 整体超时\n", tempProxy)
+			fmt.Printf("%s 整体超时\n", logHostPort)
 		}
 	}
 
